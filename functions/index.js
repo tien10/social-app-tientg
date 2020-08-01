@@ -21,6 +21,7 @@ const firebaseConfig = {
 };
 
 const firebase = require("firebase");
+const { json } = require("express");
 firebase.initializeApp(firebaseConfig);
 
 const db = admin.firestore();
@@ -28,12 +29,12 @@ const db = admin.firestore();
 // // Create and Deploy Your First Cloud Functions
 // // https://firebase.google.com/docs/functions/write-firebase-functions
 //
-// exports.helloWorld = functions.https.onRequest((request, response) => {
+// exports.helloWorld = functions.https.onRequest((req, res) => {
 //   functions.logger.info("Hello logs!", { structuredData: true });
-//   response.send("Hello from Firebase!");
+//   res.send("Hello from Firebase!");
 // });
 
-app.get("/screams", (request, response) => {
+app.get("/screams", (req, res) => {
   admin
     .firestore()
     .collection("screams")
@@ -58,16 +59,61 @@ app.get("/screams", (request, response) => {
           //   createdAt: new Date(doc.data().createdAt).toISOString(),
         });
       });
-      return response.json(screams);
+      return res.json(screams);
     })
     .catch((err) => console.error(err));
 });
 
-// // get thi screams, post thi scream
-app.post("/scream", (request, response) => {
+// // sau khi dang nhap, co token, xac thuc token de them moi scream
+const FBAuth = (req, res, next) => {
+  let idToken;
+  // // startsWith khong phai startWith, thieu chu s, cay!
+  if (
+    req.headers.authorization &&
+    req.headers.authorization.startsWith("Bearer ")
+  ) {
+    // split tao ra 1 mang co 2 phan tu
+    idToken = req.headers.authorization.split("Bearer ")[1];
+  } else {
+    console.error("Khong tim thay token");
+    return res.status(403).json({ error: "chua duoc cap quyen, unauthorized" });
+  }
+
+  admin
+    .auth()
+    .verifyIdToken(idToken)
+    .then((decodedToken) => {
+      req.user = decodedToken;
+      console.log(decodedToken);
+      return (
+        db
+          .collection("users")
+          // // uid chu khong phai id, thieu chu u, cay!
+          // .where("userId", "==", req.user.id)
+          .where("userId", "==", req.user.uid)
+          .limit(1)
+          .get()
+      );
+    })
+    .then((data) => {
+      req.user.handle = data.docs[0].data().handle;
+      return next();
+    })
+    .catch((err) => {
+      console.error("Loi khi verify token", err);
+      return res.status(403).json(err);
+    });
+};
+
+// // get: screams, post: scream
+app.post("/scream", FBAuth, (req, res) => {
   const newScream = {
-    body: request.body.body,
-    userHandle: request.body.userHandle,
+    body: req.body.body,
+    // // cach cu khi chua truyen FBAuth vao
+    // userHandle: req.body.userHandle,
+
+    // // cach moi khi truyen FBAuth vao
+    userHandle: req.user.handle,
     // createdAt: admin.firestore.Timestamp.fromDate(new Date()),
 
     // // dinh dang gio cho de nhin hon
@@ -80,17 +126,17 @@ app.post("/scream", (request, response) => {
     .collection("screams")
     .add(newScream)
     .then((doc) => {
-      return response.json({ message: `${doc.id} created` });
+      return res.json({ message: `${doc.id} created` });
     })
     .catch((err) => {
-      response.status(500).json({ error: "wrong" });
+      res.status(500).json({ error: "wrong" });
       console.error(err);
     });
 });
 
 // // Viet lai bang express ngan gon hon
 //
-// exports.getScreams = functions.https.onRequest((request, response) => {
+// exports.getScreams = functions.https.onRequest((req, res) => {
 //   admin
 //     .firestore()
 //     .collection("screams")
@@ -100,19 +146,19 @@ app.post("/scream", (request, response) => {
 //       data.forEach((doc) => {
 //         screams.push(doc.data());
 //       });
-//       return response.json(screams);
+//       return res.json(screams);
 //     })
 //     .catch((err) => console.error(err));
 // });
 
-// exports.createScreams = functions.https.onRequest((request, response) => {
-//   if (request.method !== "POST") {
-//     return response.status(400).json({ error: "Sai method" });
+// exports.createScreams = functions.https.onRequest((req, res) => {
+//   if (req.method !== "POST") {
+//     return res.status(400).json({ error: "Sai method" });
 //   }
 
 //   const newScream = {
-//     body: request.body.body,
-//     userHandle: request.body.userHandle,
+//     body: req.body.body,
+//     userHandle: req.body.userHandle,
 //     createdAt: admin.firestore.Timestamp.fromDate(new Date()),
 //   };
 
@@ -121,13 +167,26 @@ app.post("/scream", (request, response) => {
 //     .collection("screams")
 //     .add(newScream)
 //     .then((doc) => {
-//       return response.json({ message: `${doc.id} created` });
+//       return res.json({ message: `${doc.id} created` });
 //     })
 //     .catch((err) => {
-//       response.status(500).json({ error: "wrong" });
+//       res.status(500).json({ error: "wrong" });
 //       console.error(err);
 //     });
 // });
+
+// // kiem tra email nhap vao co hop le khong
+const isEmail = (email) => {
+  const regEx = /^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
+  if (email.match(regEx)) return true;
+  else return false;
+};
+
+// // kiem tra xem co nhap email, password chua
+const isEmpty = (string) => {
+  if (string.trim() === "") return true;
+  else return false;
+};
 
 // Signup route
 app.post("/signup", (req, res) => {
@@ -137,6 +196,23 @@ app.post("/signup", (req, res) => {
     confirmPassword: req.body.confirmPassword,
     handle: req.body.handle,
   };
+
+  let errors = {};
+
+  // // kiem tra email co rong va hop le hay khong
+  if (isEmpty(newUser.email)) {
+    errors.email = "Email khong duoc de trong";
+  } else if (!isEmail(newUser.email)) {
+    errors.email = "Email khong hop le";
+  }
+
+  // kiem tra password co rong va trung voi confirmPassword khong
+  if (isEmpty(newUser.password)) errors.password = "Password khong duoc rong";
+  if (isEmpty(newUser.handle)) errors.handle = "Handle khong duoc rong";
+  if (newUser.password !== newUser.confirmPassword)
+    errors.confirmPassword = "Password khong khop";
+
+  if (Object.keys(errors).length > 0) return res.status(400).json(errors);
 
   // TODO: validate data
   // // them user moi dang ky vao database users
@@ -190,6 +266,37 @@ app.post("/signup", (req, res) => {
   //       console.error(err);
   //       return res.status(500).json({ error: err.code });
   //     });
+});
+
+// // Login route
+app.post("/login", (req, res) => {
+  const user = {
+    email: req.body.email,
+    password: req.body.password,
+  };
+
+  let errors = {};
+
+  if (isEmpty(user.email)) errors.email = "Email khong duoc trong";
+  if (isEmpty(user.password)) errors.password = "Password khong duoc trong";
+
+  if (Object.keys(errors).length > 0) return res.status(400).json(errors);
+
+  firebase
+    .auth()
+    .signInWithEmailAndPassword(user.email, user.password)
+    .then((data) => {
+      return data.user.getIdToken();
+    })
+    .then((token) => {
+      return res.json({ token });
+    })
+    .catch((err) => {
+      console.error(err);
+      if (err.code === "auth/wrong-password") {
+        return res.status(403).json({ general: "sai password" });
+      } else return res.status(500).json({ error: err.code });
+    });
 });
 
 // // https://baseurl.com/api/
