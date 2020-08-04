@@ -17,6 +17,9 @@ exports.getAllScreams = (req, res) => {
           body: doc.data().body,
           userHandle: doc.data().userHandle,
           createdAt: doc.data().createdAt,
+          commentCount: doc.data().commentCount,
+          likeCount: doc.data().likeCount,
+          userImage: doc.data().userImage,
           // // toDateString() khong loi
           //   createdAt: new Date(doc.data().createdAt).toDateString(),
           // // toISOString() loi
@@ -52,7 +55,7 @@ exports.postOneScream = (req, res) => {
       const resScream = newScream;
       resScream.screamId = doc.id;
       // return res.json({ message: `${doc.id} created` });
-      res.json(resScream);
+      return res.json(resScream);
     })
     .catch((err) => {
       res.status(500).json({ error: "wrong" });
@@ -60,7 +63,7 @@ exports.postOneScream = (req, res) => {
     });
 };
 
-// Get on scream
+// Get one scream
 exports.getScream = (req, res) => {
   let screamData = {};
   db.doc(`/screams/${req.params.screamId}`)
@@ -113,7 +116,7 @@ exports.commentOnScream = (req, res) => {
       return db.collection("comments").add(newComment);
     })
     .then(() => {
-      res.json(newComment);
+      return res.json(newComment);
     })
     .catch((err) => {
       console.error(err);
@@ -200,7 +203,7 @@ exports.unlikeScream = (req, res) => {
               return screamDocument.update({ likeCount: screamData.likeCount });
             })
             .then(() => {
-              res.json(screamData);
+              return res.json(screamData);
             })
         );
       }
